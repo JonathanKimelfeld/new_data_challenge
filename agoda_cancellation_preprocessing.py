@@ -81,15 +81,17 @@ import pandas as pd
 #     df = remove_outliers(df)
 #     return df.drop("cancelled", 1), df.cancelled
 #
-cols = ['1st_pnlty_days', '1st_pnlty_amount', '1st_pnlty_type',
+new_cols = ['1st_pnlty_days', '1st_pnlty_amount', '1st_pnlty_type',
               '2st_pnlty_days', '2st_pnlty_amount', '2st_pnlty_type',
               'no_show_amount', 'no_show_type']
 
-# df = pd.read_csv("C:\\Users\\User\\Documents\\Uni\\Gimel\\IML\\IML.HUJI-main\\dataPreprocessing\\agoda_cancellation_train.csv")
 df = pd.read_csv("C:\\Users\\User\\Desktop\\IML.HUJI-main\\dataPreprocessing\\agoda_cancellation_train.csv")
-index = 0
 
-for s in df.cancellation_policy_code:
+for col in new_cols:
+    df[col] = np.nan
+
+
+for index, s in enumerate(df.cancellation_policy_code):
   s = (s.split('_'))
   for policy in s:
       no_show = False
@@ -101,15 +103,15 @@ for s in df.cancellation_policy_code:
           typ1 = p[1][-1]
           counter += 1
           if counter == 1:
-              print(day1, fee1, typ1)
-              # df.at[index, '1st_pnlty_days'] = day1
-              # df.at[index, '1st_pnlty_amount'] = fee1
-              # df.at[index, '1st_pnlty_type'] = typ1
+              # print(day1, fee1, typ1)
+              df.at[index, '1st_pnlty_days'] = day1
+              df.at[index, '1st_pnlty_amount'] = fee1
+              df.at[index, '1st_pnlty_type'] = typ1
           else:
-              print(day1, fee1, typ1)
-              # df.at[index, '2st_pnlty_days'] = day1
-              # df.at[index, '2st_pnlty_amount'] = fee1
-              # df.at[index, '2st_pnlty_type'] = typ1
+              # print(day1, fee1, typ1)
+              df.at[index, '2st_pnlty_days'] = day1
+              df.at[index, '2st_pnlty_amount'] = fee1
+              df.at[index, '2st_pnlty_type'] = typ1
       elif policy != 'UNKNOWN':  # no show case
           no_show = True
           if 'N' in ''.join(policy):
@@ -123,8 +125,7 @@ for s in df.cancellation_policy_code:
           df.at[index, 'no_show_amount'] = noshow_amount
           df.at[index, 'no_show_type'] = noshow_type
       else:
-        for k in cols:
+        for k in new_cols:
           df.at[index, k] = '0'
-      index+=1
 
-print(df["1st_pnly_amount"][3])
+print(df.head())
