@@ -1,15 +1,5 @@
-from scipy.stats import stats
-
-from IMLearn.utils import split_train_test
-from IMLearn.learners.regressors import LinearRegression
-
-from typing import NoReturn
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
-import plotly.io as pio
-
 
 # pio.templates.default = "simple_white"
 #
@@ -98,6 +88,7 @@ cols = ['1st_pnlty_days', '1st_pnlty_amount', '1st_pnlty_type',
 # df = pd.read_csv("C:\\Users\\User\\Documents\\Uni\\Gimel\\IML\\IML.HUJI-main\\dataPreprocessing\\agoda_cancellation_train.csv")
 df = pd.read_csv("C:\\Users\\User\\Desktop\\IML.HUJI-main\\dataPreprocessing\\agoda_cancellation_train.csv")
 index = 0
+
 for s in df.cancellation_policy_code:
   s = (s.split('_'))
   for policy in s:
@@ -110,13 +101,15 @@ for s in df.cancellation_policy_code:
           typ1 = p[1][-1]
           counter += 1
           if counter == 1:
-              df.at[index, '1st_pnlty_days'] = day1
-              df.at[index, '1st_pnlty_amount'] = fee1
-              df.at[index, '1st_pnlty_type'] = typ1
+              print(day1, fee1, typ1)
+              # df.at[index, '1st_pnlty_days'] = day1
+              # df.at[index, '1st_pnlty_amount'] = fee1
+              # df.at[index, '1st_pnlty_type'] = typ1
           else:
-              df.at[index, '2st_pnlty_days'] = day1
-              df.at[index, '2st_pnlty_amount'] = fee1
-              df.at[index, '2st_pnlty_type'] = typ1
+              print(day1, fee1, typ1)
+              # df.at[index, '2st_pnlty_days'] = day1
+              # df.at[index, '2st_pnlty_amount'] = fee1
+              # df.at[index, '2st_pnlty_type'] = typ1
       elif policy != 'UNKNOWN':  # no show case
           no_show = True
           if 'N' in ''.join(policy):
