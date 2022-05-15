@@ -1,5 +1,9 @@
 import pandas as pd
 import numpy as np
+from numpy import dtype
+import os
+import plotly.express as px
+from sklearn.ensemble import RandomForestClassifier
 
 ISO2 = {'Afghanistan': 'AF',
         'Albania': 'AL',
@@ -260,6 +264,8 @@ def merge_data_frames(original_set, test_sets, labels):
     main['cancellation_datetime'] = pd.to_datetime(main['cancellation_datetime'])
     main['cancellation_datetime'] = main['cancellation_datetime'].fillna(0)
     main["cancelled"] = np.where(main["cancellation_datetime"] != 0, 1, 0)
+    main = main.drop("cancellation_datetime", 1)
+
     frames.append(main)
     for i in range(len(labels)):
         test_set = pd.read_csv(test_sets[i])
@@ -274,9 +280,7 @@ original = "/Users/mayagoldman/PycharmProjects/new_data_challenge/data/agoda_can
 test_sets = [local + "data/Weekly test set/week_1_test_data.csv" , local + "data/Weekly test set/week_2_test_data.csv" , local + "data/Weekly test set/week_3_test_data.csv" , local + "data/Weekly test set/week_4_test_data.csv" , local + "data/Weekly test set/week_5_test_data.csv"]
 labels = [local+"data/Labels/week_1_labels.csv" , local+"data/Labels/week_2_labels.csv" , local+"data/Labels/week_3_labels.csv" , local+"data/Labels/week_4_labels.csv" , local+"data/Labels/week_5_labels.csv"]
 
-df = merge_data_frames( original, test_sets , labels)
-df.head()
-df.describe()
+
 #######################################################################################################################
 
 def cancellationPolicyPreprocess(df):
@@ -326,30 +330,31 @@ def cancellationPolicyPreprocess(df):
     return df
 
 
+binary_features =[ "request_highfloor", "request_largebed", "request_nonesmoke", "request_twinbeds" , "request_airport", "request_earlycheckin"]
+
 def fill_null(df):
     for f in binary_features:
         df[f] = df[f].fillna(0)
     return df.dropna().drop_duplicates()
 
 
-def binarize(df):
+def replace(df):
     df["guest_is_not_the_customer"] = np.where(df["guest_is_not_the_customer"] == True, 1, 0)
     df["is_user_logged_in"] = np.where(df["is_user_logged_in"] == True, 1, 0)
     df["is_first_booking"] = np.where(df["is_first_booking"] == True, 1, 0)
-    return df
+    return df.replace({"guest_nationality_country_name": ISO2})
 
 
-DateTimeFeatures = ['booking_datetime', 'checkin_date', 'checkout_date', 'cancellation_datetime']
-
+DateTimeFeatures = ['booking_datetime', 'checkin_date', 'checkout_date' , 'hotel_live_date']
 
 def toDateTime(df):
-    pass
+    for col in DateTimeFeatures:
+        df[col] = pd.to_datetime(df[col])
+    return df
 
 
 non_negative_features = []
 positive_features = []
-ranged_features = []
-binary_features = []
 
 
 def validateRanges(df):
@@ -359,27 +364,100 @@ def validateRanges(df):
         df = df[df[feature] >= 0]
     for feature in binary_features:
         df = df[df[feature].isin([0, 1])]
-    for feature in ranged_features:
-        df = df[df[feature].isin(ranged_features[feature])]
+    df = df[df["hotel_star_rating"].isin([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5])]
     return df
-
 
 #######################################################################################################################
+
 redundant_features = []
-
-
-def drop_redundant(df):
-    for feature in redundant_features:
-        df = df.drop(feature, 1)
-    return df
-
+to_process = ["hotel_city_code" , "hotel_chain_code" , "hotel_brand_code" , "hotel_area_code" , "h_customer_id" , "h_booking_id" , "hotel_id" , "cancellation_policy_code"]
 
 def remove_outliers(df):
-    pass
+    df = df[df["booked_ahead"] < 200]
 
+
+sparcity = ["original_payment_currency" , "original_payment_method", "language" , "origin_country_code" , "guest_nationality_country_name" , "customer_nationality" ,
+            "hotel_country_code" , "accommadation_type_name" ]
 
 def group_sparce(df):
-    pass
+    for i in sparcity:
+        df[i] = df[i].mask(df[i].map(df[i].value_counts(normalize=True)) < 0.05, i + '_Other')
+    return df
+
+def create_new_features(df):
+    special_requests = (list(df.filter(regex="request")))
+    df["special_requests"] = df[special_requests].sum(axis=1)
+
+    df["booking_days"] = (df['checkout_date'] - df['checkin_date']).dt.days
+
+    df["cost_per_night"] = df["original_selling_amount"] / (df["booking_days"] * df['no_of_adults']) #include children or not?
+
+    # df["weekday_num_nights"] = np.busday_count(df['checkin_date'].values.astype('datetime64[D]'),
+    #                                              df['checkout_date'].values.astype('datetime64[D]'))
+    # df["weekend_num_nights"] = (df["booking_days"] - df["weekday_num_nights"])
+
+    df["booked_ahead"] = (df['checkin_date'] - df["booking_datetime"]).dt.days
+
+    df["booked_ahead"].replace({-1: 0}, inplace=True)  # same-day bookings are valued 0.
+
+
+    # df["local stay"] = (df["guest_nationality_country_name"] == df["hotel_country_code"])
+    # df["local stay"] = np.where(df["local stay"] == True, 1, 0)
+
+
+    # df["no_of_children"] = np.where(df["no_of_children"] > 0, 1, 0)
+    # df["pay_now"] = np.where(df["charge_option"] == "Pay Now", 1, 0)
+    # df = df[df["hotel_live_date"].dt.year > 2008]
+    # df["new_hotel"] = np.where(df["hotel_live_date"].dt.year > 2016, 1, 0)
+    # df["unknown_payment"] = np.where(df["original_payment_method"] == "UNKNOWN", 1, 0)
+    # df["Card"] = np.where(df["original_payment_type"] == "Credit Card", 1, 0)
+
+    return df
 
 
 categorial_features = []
+
+def drop_redundant(df):
+    for feature in to_process:
+        df = df.drop(feature, 1)
+    for feature in sparcity:
+        df = df.drop(feature, 1)
+    for feature in DateTimeFeatures :
+        df = df.drop(feature, 1)
+    df = df.drop("charge_option", 1)
+    df = df.drop("original_payment_type", 1)
+
+    return df
+
+def produce_graph():
+    if not os.path.exists("data_challenge_images"):
+        os.mkdir("data_challenge_images")
+
+
+    for c in df.columns:
+        if dtype(df[c]):
+            title = str(c) + " vs cancelled"
+            fig = px.histogram(df , x= c , color = "cancelled", histnorm = "density" ,  barmode='group', height=400 , title = title )
+            # fig.write_image("data_challenge_images/" + str(c) +".png")
+            fig.show("browser")
+
+
+df = merge_data_frames( original, test_sets , labels)
+df = fill_null(df)
+# df = cancellationPolicyPreprocess(df)
+df = toDateTime(df)
+df = replace(df)
+df = group_sparce(df)
+df = create_new_features(df)
+df = drop_redundant(df)
+
+samples = df.drop("cancelled", 1)
+labels = df.cancelled
+
+
+
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(samples, labels, test_size=0.1, random_state=42)
+clf = RandomForestClassifier()
+clf.fit(X_train , y_train)
+print(clf.score(X_test , y_test))
