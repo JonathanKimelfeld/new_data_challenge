@@ -90,7 +90,6 @@ df = pd.read_csv("C:\\Users\\User\\Desktop\\IML.HUJI-main\\dataPreprocessing\\ag
 for col in new_cols:
     df[col] = np.nan
 
-
 for index, s in enumerate(df.cancellation_policy_code):
   s = (s.split('_'))
   for policy in s:
