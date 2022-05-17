@@ -1,9 +1,17 @@
+#######################################################################################################################
+# IMPORTS
+#######################################################################################################################
+from statistics import stdev
+
 import pandas as pd
 import numpy as np
 from numpy import dtype
 import os
 import plotly.express as px
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.tree import DecisionTreeClassifier
+import xgboost as xgb
 
 ISO2 = {'Afghanistan': 'AF',
         'Albania': 'AL',
@@ -257,6 +265,16 @@ ISO2 = {'Afghanistan': 'AF',
         'Zimbabwe': 'ZW',
         'Åland Islands': 'AX'}
 
+#######################################################################################################################
+# LOAD DATA
+#######################################################################################################################
+def load_original_training_data(original_set):
+    main = pd.read_csv(original_set)
+    main['cancellation_datetime'] = pd.to_datetime(main['cancellation_datetime'])
+    main['cancellation_datetime'] = main['cancellation_datetime'].fillna(0)
+    main["cancelled"] = np.where(main["cancellation_datetime"] != 0, 1, 0)
+    main = main.drop("cancellation_datetime", 1)
+    return main
 
 def merge_data_frames(original_set, test_sets, labels):
     frames = []
@@ -277,10 +295,12 @@ def merge_data_frames(original_set, test_sets, labels):
 
 local = "/Users/mayagoldman/PycharmProjects/new_data_challenge/"
 original = "/Users/mayagoldman/PycharmProjects/new_data_challenge/data/agoda_cancellation_train.csv"
-test_sets = [local + "data/Weekly test set/week_1_test_data.csv" , local + "data/Weekly test set/week_2_test_data.csv" , local + "data/Weekly test set/week_3_test_data.csv" , local + "data/Weekly test set/week_4_test_data.csv" , local + "data/Weekly test set/week_5_test_data.csv"]
-labels = [local+"data/Labels/week_1_labels.csv" , local+"data/Labels/week_2_labels.csv" , local+"data/Labels/week_3_labels.csv" , local+"data/Labels/week_4_labels.csv" , local+"data/Labels/week_5_labels.csv"]
+test_sets = [local + "data/Weekly test set/week_1_test_data.csv" , local + "data/Weekly test set/week_2_test_data.csv" , local + "data/Weekly test set/week_3_test_data.csv" , local + "data/Weekly test set/week_4_test_data.csv"] # , local + "data/Weekly test set/week_5_test_data.csv"]
+labels = [local+"data/Labels/week_1_labels.csv" , local+"data/Labels/week_2_labels.csv" , local+"data/Labels/week_3_labels.csv" , local+"data/Labels/week_4_labels.csv" ]#, local+"data/Labels/week_5_labels.csv"]
 
 
+#######################################################################################################################
+#PREPROCESSING METHODS
 #######################################################################################################################
 
 def cancellationPolicyPreprocess(df):
@@ -368,7 +388,8 @@ def validateRanges(df):
     return df
 
 #######################################################################################################################
-
+# PREPROCESSING METHODS - FEATURE EXTRACTION & CREATION
+#######################################################################################################################
 redundant_features = []
 to_process = ["hotel_city_code" , "hotel_chain_code" , "hotel_brand_code" , "hotel_area_code" , "h_customer_id" , "h_booking_id" , "hotel_id" , "cancellation_policy_code"]
 
@@ -424,15 +445,18 @@ def drop_redundant(df):
         df = df.drop(feature, 1)
     for feature in DateTimeFeatures :
         df = df.drop(feature, 1)
+
     df = df.drop("charge_option", 1)
     df = df.drop("original_payment_type", 1)
 
     return df
 
+#######################################################################################################################
+# DATA EXPLORATION - GRAPH METHODS
+#######################################################################################################################
 def produce_graph():
     if not os.path.exists("data_challenge_images"):
         os.mkdir("data_challenge_images")
-
 
     for c in df.columns:
         if dtype(df[c]):
@@ -442,7 +466,13 @@ def produce_graph():
             fig.show("browser")
 
 
+
+#######################################################################################################################
+# PREPROCESS TRAIN DATA
+#######################################################################################################################
+
 df = merge_data_frames( original, test_sets , labels)
+# df = load_original_training_data(original)
 df = fill_null(df)
 # df = cancellationPolicyPreprocess(df)
 df = toDateTime(df)
@@ -451,13 +481,167 @@ df = group_sparce(df)
 df = create_new_features(df)
 df = drop_redundant(df)
 
-samples = df.drop("cancelled", 1)
-labels = df.cancelled
+X = df.drop("cancelled", 1)
+y = df.cancelled
+
+#######################################################################################################################
+# PREPROCESS TEST DATA
+#######################################################################################################################
+def preprocess_past_test_data(test, label):
+    df = pd.read_csv(test)
+    for f in binary_features:
+        df[f] = df[f].fillna(0)
+    # df = cancellationPolicyPreprocess(df)
+    df = toDateTime(df)
+    df = replace(df)
+    df = group_sparce(df)
+    df = create_new_features(df)
+    df = drop_redundant(df)
+    label_df = pd.read_csv(label)
+    return df , label_df['cancel'].astype(int)
+
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
+
+categorical_pipeline = Pipeline(
+    steps=[
+        ("impute", SimpleImputer(strategy="most_frequent")),
+        ("oh-encode", OneHotEncoder(handle_unknown="ignore", sparse=False)),
+    ]
+)
 
 
+from sklearn.preprocessing import StandardScaler
 
+numeric_pipeline = Pipeline(
+    steps=[("impute", SimpleImputer(strategy="mean")),
+           ("scale", StandardScaler())]
+)
+
+cat_cols = X.select_dtypes(exclude="number").columns
+num_cols = X.select_dtypes(include="number").columns
+
+from sklearn.compose import ColumnTransformer
+
+full_processor = ColumnTransformer(
+    transformers=[
+        ("numeric", numeric_pipeline, num_cols),
+        ("categorical", categorical_pipeline, cat_cols),
+    ]
+)
+
+
+#######################################################################################################################
+# PREDICTIONS USING SKLEARN
+#######################################################################################################################
+
+# from sklearn.model_selection import train_test_split
+# from sklearn.neighbors import KNeighborsClassifier
+# from sklearn.ensemble import AdaBoostRegressor
+# X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=42)
+# clf = RandomForestClassifier()
+# # clf = KNeighborsClassifier()
+# # clf = AdaBoostClassifier(base_estimator=DecisionTreeClassifier())
+# clf.fit(X_train , y_train)
+
+####################### XGB CLASSIFIER #################################################################################
+
+
+X_processed = full_processor.fit_transform(X)
+y_processed = SimpleImputer(strategy="most_frequent").fit_transform(
+    y.values.reshape(-1, 1)
+)
+
+from sklearn.model_selection import StratifiedKFold
+
+
+skf = StratifiedKFold(n_splits=10, shuffle=True)
+xgb_cl = xgb.XGBClassifier()
+
+
+lst_accu_stratified = []
+
+for train_index, test_index in skf.split(X, y):
+    x_train_fold, x_test_fold = X_processed[train_index], X_processed[test_index]
+    y_train_fold, y_test_fold = y_processed[train_index], y_processed[test_index]
+    xgb_cl.fit(x_train_fold, y_train_fold)
+    lst_accu_stratified.append(xgb_cl.score(x_test_fold, y_test_fold))
+
+# Print the output.
+print('List of possible accuracy:', lst_accu_stratified)
+print('\nMaximum Accuracy That can be obtained from this model is:',
+      max(lst_accu_stratified) * 100, '%')
+print('\nMinimum Accuracy:',
+      min(lst_accu_stratified) * 100, '%')
+print('\nOverall Accuracy:',
+      np.mean(lst_accu_stratified) * 100, '%')
+print('\nStandard Deviation is:', stdev(lst_accu_stratified))
+
+
+# for i in range(len(test_sets)):
+#     X_test , y_test = preprocess_past_test_data(test_sets[i], labels[i])
+#     print(xgb_cl.score(X_test , y_test))
+
+from sklearn import metrics
+
+xgb_cl.fit(X_processed, y_processed)
+X_test, y_test = preprocess_past_test_data(local + "data/Weekly test set/week_5_test_data.csv",  local+"data/Labels/week_5_labels.csv")
+# print(xgb_cl.score(X_test, y_test) * 100)
+y_pred = xgb_cl.predict(X_test)
+print("Accuracy:",metrics.f1_score(y_test, y_pred, average= 'macro'))
+cm = confusion_matrix(y_test, y_pred, labels=xgb_cl.classes_ )
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=xgb_cl.classes_)
+plt = disp.plot()
+print(cm)
 from sklearn.model_selection import train_test_split
-X_train, X_test, y_train, y_test = train_test_split(samples, labels, test_size=0.1, random_state=42)
-clf = RandomForestClassifier()
-clf.fit(X_train , y_train)
-print(clf.score(X_test , y_test))
+
+# X_train, X_test, y_train, y_test = train_test_split(
+#     X_processed, y_processed, stratify=y_processed)
+#
+# from sklearn.metrics import accuracy_score
+#
+# # Init classifier
+# xgb_cl = xgb.XGBClassifier()
+#
+# # Fit
+# xgb_cl.fit(X_train, y_train)
+#
+# # Predict
+# preds = xgb_cl.predict(X_test)
+#
+# # Score
+# print(accuracy_score(y_test, preds))
+
+
+#######################################################################################################################
+# MODEL EVALUATION
+#######################################################################################################################
+
+# print(clf.score(X_test , y_test))
+
+
+
+#######################################################################################################################
+# PARAMETER TUNING
+#######################################################################################################################
+# param_grid = {
+#     "max_depth": [3, 4, 5, 7],
+#     "learning_rate": [0.1, 0.01, 0.05],
+#     "gamma": [0, 0.25, 1],
+#     "reg_lambda": [0, 1, 10],
+#     "scale_pos_weight": [1, 3, 5],
+#     "subsample": [0.8],
+#     "colsample_bytree": [0.5],
+# }
+#
+# from sklearn.model_selection import GridSearchCV
+#
+# # Init classifier
+# xgb_cl = xgb.XGBClassifier(objective="binary:logistic")
+#
+# # Init Grid Search
+# grid_cv = GridSearchCV(xgb_cl, param_grid, n_jobs=-1, cv=3, scoring="roc_auc")
+#
+# # Fit
+# _ = grid_cv.fit(X_processed, y_processed)
